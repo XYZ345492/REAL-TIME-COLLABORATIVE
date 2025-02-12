@@ -1,6 +1,11 @@
 # REAL-TIME-COLLABORATIVE
 
-name : Sameer L company : CODTECH IT SOLUTIONS id : CDO8DVI domain : full stack web development duration : dec to jan 2025 mentor : Muzammil Ahmed
+name : T GANESH
+company : CODTECH IT SOLUTIONS 
+id : CT08HUQ
+domain : full stack web development
+duration : dec30 to jan 30 2025 
+mentor : Neela Santhosh Kumar
 
 #output image3
 
