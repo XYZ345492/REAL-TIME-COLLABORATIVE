@@ -1,0 +1,264 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+type DocumentChange = {
+  position: number;
+  text: string;
+  type: 'insert' | 'delete';
+  timestamp: number;
+};
+
+type UserCursor = {
+  userId: string;
+  position: number;
+  color: string;
+};
+
+const defaultDocumentText = `This is a collaborative document editor.
+
+Start typing to begin!
+
+`;
+
+
+const generateRandomColor = () => {
+    const letters = '0123456789ABCDEF';
+    let color = '#';
+    for (let i = 0; i < 6; i++) {
+        color += letters[Math.floor(Math.random() * 16)];
+    }
+    return color;
+};
+
+const CollaborativeEditor: React.FC = () => {
+  const [documentText, setDocumentText] = useState(defaultDocumentText);
+  const [localCursorPosition, setLocalCursorPosition] = useState(0);
+  const [remoteCursors, setRemoteCursors] = useState<UserCursor[]>([]);
+  const [documentChanges, setDocumentChanges] = useState<DocumentChange[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+
+  const userId = useRef(Math.random().toString(36).substring(2, 15)).current;
+    const userColor = useRef(generateRandomColor()).current;
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+
+  // Placeholder for socket connection (replace with actual socket logic)
+    useEffect(() => {
+        const handleReceiveChange = (change: DocumentChange) => {
+          setDocumentChanges(prevChanges => [...prevChanges, change]);
+            applyRemoteChange(change);
+      };
+
+      const handleReceiveCursor = (cursor: UserCursor) => {
+        setRemoteCursors(prevCursors => {
+          const existingCursorIndex = prevCursors.findIndex(c => c.userId === cursor.userId);
+           if (existingCursorIndex > -1) {
+              const updatedCursors = [...prevCursors];
+               updatedCursors[existingCursorIndex] = cursor;
+              return updatedCursors;
+           } else {
+                return [...prevCursors, cursor];
+            }
+        });
+      };
+
+      // Simulate socket events
+      const mockSocket = {
+        on: (event: string, callback: (data: any) => void) => {
+            if (event === 'document_change') {
+               mockSocket.listeners.document_change.push(callback);
+           }
+           if(event === 'cursor_change'){
+              mockSocket.listeners.cursor_change.push(callback);
+          }
+        },
+        emit: (event: string, data: any) => {
+             if (event === 'document_change') {
+                mockSocket.listeners.document_change.forEach(listener => listener(data));
+           }
+            if(event === 'cursor_change'){
+                mockSocket.listeners.cursor_change.forEach(listener => listener(data));
+            }
+        },
+          listeners: {
+            document_change: [] as ((data: any) => void)[],
+              cursor_change: [] as ((data:any) => void)[]
+          }
+      };
+
+    mockSocket.on('document_change', handleReceiveChange);
+    mockSocket.on('cursor_change', handleReceiveCursor);
+
+    const sendCursorPosition = () => {
+          mockSocket.emit('cursor_change', {
+                userId: userId,
+                position: localCursorPosition,
+                color: userColor,
+            });
+        };
+
+        if (isFocused) {
+          const cursorInterval = setInterval(sendCursorPosition, 200);
+            return () => {
+                clearInterval(cursorInterval);
+            }
+        }
+
+        return () => {
+            mockSocket.listeners.document_change = [];
+            mockSocket.listeners.cursor_change = [];
+        }
+
+    }, [localCursorPosition, isFocused]);
+
+    const applyRemoteChange = (change: DocumentChange) => {
+         setDocumentText((prevText) => {
+            const { position, text, type } = change;
+          if(type === 'insert')
+            return prevText.slice(0, position) + text + prevText.slice(position);
+          else if (type === 'delete')
+            return prevText.slice(0, position) + prevText.slice(position + text.length);
+            return prevText;
+        });
+    };
+
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newText = e.target.value;
+    const change = calculateTextChange(documentText, newText, localCursorPosition);
+    if (change) {
+        setDocumentChanges(prevChanges => [...prevChanges, change]);
+       // Send the change to server
+        mockSocket.emit('document_change', change);
+    }
+
+    setDocumentText(newText);
+
+  };
+
+
+    const calculateTextChange = (oldText: string, newText: string, currentPosition: number): DocumentChange | null => {
+        if (oldText === newText) {
+            return null;
+        }
+
+        let changeType: 'insert' | 'delete' = 'insert';
+        let changeText = "";
+        let changePosition = currentPosition;
+
+
+        if(newText.length > oldText.length){
+          changeType = 'insert';
+          for(let i = 0; i < newText.length; i++){
+            if(oldText[i] !== newText[i]){
+                changePosition = i;
+              changeText = newText.slice(i, newText.length)
+                break;
+            }
+           }
+        }
+        else if (newText.length < oldText.length) {
+            changeType = 'delete';
+            for(let i = 0; i < oldText.length; i++){
+                if(oldText[i] !== newText[i]){
+                    changePosition = i;
+                    changeText = oldText.slice(i, oldText.length);
+                    let delta = oldText.length - newText.length;
+                  changeText = oldText.slice(i, i + delta)
+                   break;
+                }
+            }
+        }
+
+
+        return {
+          position: changePosition,
+          text: changeText,
+          type: changeType,
+          timestamp: Date.now()
+        };
+    };
+
+
+  const handleCursorChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (textareaRef.current) {
+      setLocalCursorPosition(textareaRef.current.selectionStart);
+    }
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  }
+
+  const handleBlur = () => {
+    setIsFocused(false)
+  }
+
+
+
+  return (
+    <div className="flex flex-col items-center p-4 bg-gray-100 min-h-screen">
+      <h1 className="text-2xl font-bold mb-4 text-gray-800">Collaborative Document Editor</h1>
+      <div className="w-full max-w-4xl bg-white rounded-lg shadow-md overflow-hidden">
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={documentText}
+            onChange={handleTextChange}
+            onSelect={handleCursorChange}
+            onBlur={handleBlur}
+            onFocus={handleFocus}
+            className="w-full p-4 border-none focus:outline-none resize-none font-mono text-gray-700 leading-relaxed"
+            placeholder="Start typing..."
+            rows={10}
+          />
+          {remoteCursors.map((cursor) => (
+            <div
+              key={cursor.userId}
+              style={{
+                position: 'absolute',
+                pointerEvents: 'none',
+                left: 0,
+                top: 0,
+                transform: `translateY(${
+                  (documentText.slice(0, cursor.position).split('\n').length - 1) * 24
+                }px) translateX(${
+                    (cursor.position - documentText.slice(0, cursor.position).lastIndexOf('\n')-1) * 9
+                   }px)`,
+                height: '1.2em',
+                 zIndex: 10,
+                 borderLeft: `2px solid ${cursor.color}`
+              }}
+              className="cursor-remote"
+            >
+                <span style={{
+                backgroundColor: cursor.color,
+                 padding: '2px 4px',
+                 marginLeft: '-4px',
+                 color: 'white',
+                 fontSize: '0.7em',
+                 borderRadius: '3px'
+                }}>
+                {cursor.userId.slice(0, 3)}
+                </span>
+            </div>
+          ))}
+        </div>
+      </div>
+        <div className="mt-4 w-full max-w-4xl">
+          <h2 className="text-lg font-semibold mb-2 text-gray-700">Document Changes</h2>
+          {documentChanges.length === 0 ? <p className="text-gray-500">No changes yet.</p> :
+          <ul className="bg-white rounded shadow overflow-y-auto max-h-48">
+            {documentChanges.map((change, index) => (
+              <li key={index} className="p-2 border-b last:border-b-0 text-sm text-gray-600">
+                  <span className="font-medium">{change.type === 'insert' ? 'Inserted:' : 'Deleted:'}</span> {change.text} at position {change.position}
+              </li>
+            ))}
+          </ul>
+          }
+        </div>
+    </div>
+  );
+};
+
+export default CollaborativeEditor;
